@@ -1,55 +1,32 @@
-"""字节漂移旁路账：写入不回正主路径。"""
+"""字节漂移看板：凭证行与同源状态同轨，状态即真相。"""
 from __future__ import annotations
 
 from app.db import get_db
-from app.services.byte_drift_surface import panel_chip, record_event, snapshot, truth_flag
+from app.services.byte_drift_surface import panel_chip, truth_flag
 
-_SLUG = "byte_drift"
 _TITLE = "字节漂移"
 _OK = "已同源"
+_BAD = "待重算"
 
 
-def append_ledger(plan_id: int, note: str, db_path: str | None = None) -> dict:
-    with get_db(db_path) as conn:
-        conn.execute(
-            "INSERT OR REPLACE INTO meta(key, value) VALUES (?, ?)",
-            (f"{_SLUG}_ledger_{plan_id}", note or _TITLE),
-        )
-    record_event(f"plan={plan_id} {note}", db_path)
-    return {
-        "plan_id": plan_id,
-        "note": note,
-        "panel": panel_chip(db_path),
-        "truth": truth_flag(db_path),
-    }
-
-
-def ledger_rows(db_path: str | None = None) -> list[dict]:
+def voucher_rows(db_path: str | None = None) -> list[dict]:
     with get_db(db_path) as conn:
         rows = conn.execute(
-            "SELECT key, value FROM meta WHERE key LIKE ? ORDER BY key",
-            (f"{_SLUG}_ledger_%",),
+            "SELECT v.*, p.plan_code FROM plan_byte_vouchers v "
+            "JOIN compact_plans p ON p.id=v.plan_id ORDER BY v.id DESC LIMIT 20"
         ).fetchall()
-        out = []
-        for r in rows:
-            out.append(
-                {
-                    "key": r["key"],
-                    "value": r["value"],
-                    "chip": panel_chip(db_path),
-                }
-            )
-        return out
+        return [dict(r) for r in rows]
 
 
 def dashboard(db_path: str | None = None) -> dict:
-    snap = snapshot(db_path)
+    chip = panel_chip(db_path)
+    truth = truth_flag(db_path)
     return {
         "title": _TITLE,
-        "chip": snap["panel_chip"],
-        "truth": snap["truth"],
-        "rows": ledger_rows(db_path),
+        "chip": chip,
+        "truth": truth,
+        "rows": voucher_rows(db_path),
         "ok_chip": _OK,
-        "bad_chip": "缓存口径",
-        "fake_green": snap["panel_chip"] == _OK and snap["truth"] != _OK,
+        "bad_chip": _BAD,
+        "fake_green": chip == _OK and truth != _OK,
     }

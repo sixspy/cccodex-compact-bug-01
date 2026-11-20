@@ -1,7 +1,7 @@
 """重写合并：按计划执行合并任务。"""
 from __future__ import annotations
 
-from app.db import get_db
+from app.db import get_db, get_db_locked
 from app.services.errors import ServiceError
 
 
@@ -15,7 +15,7 @@ def list_jobs(db_path: str | None = None) -> list[dict]:
 
 
 def start_rewrite(plan_id: int, db_path: str | None = None) -> dict:
-    with get_db(db_path) as conn:
+    with get_db_locked(db_path) as conn:
         plan = conn.execute(
             "SELECT * FROM compact_plans WHERE id=?", (plan_id,)
         ).fetchone()
@@ -29,6 +29,13 @@ def start_rewrite(plan_id: int, db_path: str | None = None) -> dict:
         ).fetchone()
         if running:
             raise ServiceError("已有在途合并任务", 409)
+        mount = conn.execute(
+            "SELECT COALESCE(SUM(f.size_bytes),0) AS s FROM plan_items i "
+            "JOIN lake_files f ON f.id=i.file_id WHERE i.plan_id=?",
+            (plan_id,),
+        ).fetchone()["s"]
+        if int(plan["plan_bytes"]) != int(mount):
+            raise ServiceError("计划字节与挂载和未对齐，请先重算", 409)
         items = conn.execute(
             "SELECT f.* FROM plan_items i JOIN lake_files f ON f.id=i.file_id "
             "WHERE i.plan_id=? AND f.status='已入计划'",

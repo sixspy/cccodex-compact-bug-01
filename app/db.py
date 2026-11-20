@@ -21,6 +21,7 @@ CREATE TABLE IF NOT EXISTS compact_plans (
   status TEXT NOT NULL CHECK (status IN ('草稿','已发布','执行中','已完成','已作废')),
   target_table TEXT NOT NULL,
   note TEXT NOT NULL DEFAULT '',
+  plan_bytes INTEGER NOT NULL DEFAULT 0,
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
@@ -48,7 +49,17 @@ CREATE TABLE IF NOT EXISTS volume_reports (
   before_bytes INTEGER NOT NULL,
   after_bytes INTEGER NOT NULL,
   file_count INTEGER NOT NULL,
+  aligned INTEGER NOT NULL DEFAULT 0,
   summary TEXT NOT NULL,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS plan_byte_vouchers (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  plan_id INTEGER NOT NULL REFERENCES compact_plans(id),
+  mount_bytes INTEGER NOT NULL,
+  file_count INTEGER NOT NULL,
+  source TEXT NOT NULL DEFAULT 'recompute',
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
@@ -71,6 +82,7 @@ def connect(db_path: str | None = None) -> sqlite3.Connection:
     conn = sqlite3.connect(path, check_same_thread=False)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA foreign_keys = ON")
+    conn.execute("PRAGMA busy_timeout = 5000")
     return conn
 
 
@@ -78,6 +90,21 @@ def connect(db_path: str | None = None) -> sqlite3.Connection:
 def get_db(db_path: str | None = None):
     conn = connect(db_path)
     try:
+        yield conn
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
+
+
+@contextmanager
+def get_db_locked(db_path: str | None = None):
+    """写前即取 reserved 锁的事务：并发重算/合并被串行化，避免双写互覆。"""
+    conn = connect(db_path)
+    try:
+        conn.execute("BEGIN IMMEDIATE")
         yield conn
         conn.commit()
     except Exception:

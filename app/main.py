@@ -7,15 +7,15 @@ from app.handlers.api_plans import (
     ApiPlanAttach,
     ApiPlanDetail,
     ApiPlanPublish,
+    ApiPlanRecompute,
     ApiPlans,
+    ApiPlansRecomputeAll,
 )
 from app.handlers.api_reconcile import ApiReconcileReports
 from app.handlers.api_rewrite import ApiRewriteJobs, ApiRewriteStart
 from app.handlers.api_settings import ApiSettings
 from app.handlers.api_byte_drift import (
     ApiByteDriftDash,
-    ApiByteDriftHalf,
-    ApiByteDriftNote,
     ApiByteDriftSnap,
 )
 from app.handlers.auth import (
@@ -44,16 +44,16 @@ def make_app() -> tornado.web.Application:
             (r"/api/files", ApiFiles),
             (r"/api/files/([0-9]+)/void", ApiFileVoid),
             (r"/api/plans", ApiPlans),
+            (r"/api/plans/recompute_all", ApiPlansRecomputeAll),
             (r"/api/plans/([0-9]+)", ApiPlanDetail),
             (r"/api/plans/([0-9]+)/attach", ApiPlanAttach),
             (r"/api/plans/([0-9]+)/publish", ApiPlanPublish),
+            (r"/api/plans/([0-9]+)/recompute", ApiPlanRecompute),
             (r"/api/rewrite/jobs", ApiRewriteJobs),
             (r"/api/rewrite/plans/([0-9]+)/start", ApiRewriteStart),
             (r"/api/reconcile/reports", ApiReconcileReports),
             (r"/api/settings", ApiSettings),
             (r"/api/byte_drift/dash", ApiByteDriftDash),
-            (r"/api/byte_drift/note", ApiByteDriftNote),
-            (r"/api/byte_drift/half", ApiByteDriftHalf),
             (r"/api/byte_drift/snap", ApiByteDriftSnap),
             (
                 r"/static/(.*)",

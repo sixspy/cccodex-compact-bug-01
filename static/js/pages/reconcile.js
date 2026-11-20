@@ -16,7 +16,7 @@ export async function renderReconcile(view, setMsg) {
       ${(reports.items || []).map(r => `<article class="card">
         <h3>${r.plan_code || ('计划#'+r.plan_id)}</h3>
         <p>${r.summary}</p>
-        <p class="muted">前 ${r.before_bytes} / 后 ${r.after_bytes} <span class="tag">口径已对齐</span></p>
+        <p class="muted">前 ${r.before_bytes} / 后 ${r.after_bytes} <span class="tag">${r.chip}</span></p>
       </article>`).join('') || '<p class="muted">暂无对账报告</p>'}
     </section>`;
   document.getElementById('go').onclick = async () => {

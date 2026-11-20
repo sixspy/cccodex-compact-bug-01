@@ -2,9 +2,20 @@
 from __future__ import annotations
 
 from app.db import SCHEMA, get_db, init_schema
+from app.services.plan_bytes import recompute_plan_bytes
 
+SCHEMA_VERSION = "compact-v3"
 
-SCHEMA_VERSION = "compact-v2"
+_TABLES = (
+    "plan_byte_vouchers",
+    "volume_reports",
+    "rewrite_jobs",
+    "plan_items",
+    "compact_plans",
+    "lake_files",
+    "lab_settings",
+    "meta",
+)
 
 
 def _schema_compatible(conn) -> bool:
@@ -17,25 +28,24 @@ def _schema_compatible(conn) -> bool:
         r["name"]
         for r in conn.execute("PRAGMA table_info(compact_plans)").fetchall()
     }
-    return "plan_code" in cols and "target_table" in cols
+    if not {"plan_code", "target_table", "plan_bytes"} <= cols:
+        return False
+    voucher = conn.execute(
+        "SELECT name FROM sqlite_master WHERE type='table' AND name='plan_byte_vouchers'"
+    ).fetchone()
+    return voucher is not None
 
 
 def seed_if_needed(db_path: str | None = None) -> dict:
     init_schema(db_path)
+    plan_id: int | None = None
+    file_count = 0
     with get_db(db_path) as conn:
         ver = conn.execute(
             "SELECT value FROM meta WHERE key='schema_version'"
         ).fetchone()
         if not _schema_compatible(conn) or (ver and ver["value"] != SCHEMA_VERSION):
-            for table in (
-                "volume_reports",
-                "rewrite_jobs",
-                "plan_items",
-                "compact_plans",
-                "lake_files",
-                "lab_settings",
-                "meta",
-            ):
+            for table in _TABLES:
                 conn.execute(f"DROP TABLE IF EXISTS {table}")
             conn.executescript(SCHEMA)
         elif conn.execute("SELECT value FROM meta WHERE key='seeded'").fetchone():
@@ -50,6 +60,7 @@ def seed_if_needed(db_path: str | None = None) -> dict:
             ("lake/dw_users/part-0002.parquet", "dw_users", 195_000),
             ("lake/dw_users/part-0003.parquet", "dw_users", 210_000),
         ]
+        file_count = len(files)
         for path, table, size in files:
             conn.execute(
                 "INSERT INTO lake_files(path, table_name, size_bytes, status) VALUES (?,?,?, '碎文件')",
@@ -84,30 +95,20 @@ def seed_if_needed(db_path: str | None = None) -> dict:
             (SCHEMA_VERSION,),
         )
         conn.execute("INSERT INTO meta(key, value) VALUES ('lab','湖表压实台')")
-        try:
-            from app.services.byte_drift_surface import seed_skew
-            seed_skew(db_path)
-        except Exception:
-            pass
-        return {
-            "seeded": True,
-            "files": len(files),
-            "plans": 1,
-            "settings": 3,
-        }
+    if plan_id is not None:
+        # 种子计划也走同一轨：重算挂载和、写凭证、锁写计划字节
+        recompute_plan_bytes(plan_id, source="seed", db_path=db_path)
+    return {
+        "seeded": True,
+        "files": file_count,
+        "plans": 1,
+        "settings": 3,
+    }
 
 
 def reset_seed(db_path: str | None = None) -> None:
     init_schema(db_path)
     with get_db(db_path) as conn:
-        for table in (
-            "volume_reports",
-            "rewrite_jobs",
-            "plan_items",
-            "compact_plans",
-            "lake_files",
-            "lab_settings",
-            "meta",
-        ):
+        for table in _TABLES:
             conn.execute(f"DELETE FROM {table}")
     seed_if_needed(db_path)

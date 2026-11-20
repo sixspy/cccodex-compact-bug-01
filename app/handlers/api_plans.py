@@ -1,4 +1,5 @@
 from app.handlers.base import BaseHandler
+from app.services import plan_bytes as plan_bytes_svc
 from app.services import plans as plans_svc
 from app.services.errors import ServiceError
 
@@ -36,3 +37,15 @@ class ApiPlanPublish(BaseHandler):
     def post(self, plan_id: str):
         self.require_user()
         self.json({"item": plans_svc.publish_plan(int(plan_id))})
+
+
+class ApiPlanRecompute(BaseHandler):
+    def post(self, plan_id: str):
+        self.require_user()
+        self.json({"item": plan_bytes_svc.recompute_plan_bytes(int(plan_id))})
+
+
+class ApiPlansRecomputeAll(BaseHandler):
+    def post(self):
+        self.require_user()
+        self.json(plan_bytes_svc.recompute_all())

@@ -1,9 +1,9 @@
 """压实计划：创建、发布、挂文件。"""
 from __future__ import annotations
 
-from app.db import get_db
+from app.db import get_db, get_db_locked
 from app.services.errors import ServiceError
-from app.services.plan_byte_cache import cached_plan_bytes, true_plan_bytes
+from app.services.plan_bytes import CHIP_OK, CHIP_OFF, write_sum_in_txn
 
 
 def list_plans(db_path: str | None = None) -> list[dict]:
@@ -12,13 +12,13 @@ def list_plans(db_path: str | None = None) -> list[dict]:
             "SELECT p.*, "
             "(SELECT COUNT(*) FROM plan_items i WHERE i.plan_id=p.id) AS item_count, "
             "(SELECT COALESCE(SUM(f.size_bytes),0) FROM plan_items i "
-            " JOIN lake_files f ON f.id=i.file_id WHERE i.plan_id=p.id) AS plan_bytes "
+            " JOIN lake_files f ON f.id=i.file_id WHERE i.plan_id=p.id) AS mount_bytes "
             "FROM compact_plans p ORDER BY p.id"
         ).fetchall()
         items = [dict(r) for r in rows]
         for it in items:
-            it["plan_bytes"] = cached_plan_bytes(int(it["id"]), db_path)
-            it["bytes_chip"] = "已同源"
+            it["aligned"] = int(it["plan_bytes"]) == int(it["mount_bytes"])
+            it["bytes_chip"] = CHIP_OK if it["aligned"] else CHIP_OFF
         return items
 
 
@@ -51,7 +51,7 @@ def create_plan(
 
 
 def attach_loose_files(plan_id: int, db_path: str | None = None) -> dict:
-    with get_db(db_path) as conn:
+    with get_db_locked(db_path) as conn:
         plan = conn.execute(
             "SELECT * FROM compact_plans WHERE id=?", (plan_id,)
         ).fetchone()
@@ -80,7 +80,13 @@ def attach_loose_files(plan_id: int, db_path: str | None = None) -> dict:
                 (row["id"],),
             )
             attached += 1
-        return {"plan_id": plan_id, "attached": attached}
+        # 同一事务内重算挂载和、写凭证并锁写计划字节，卡片随即同源
+        summed = write_sum_in_txn(conn, plan_id, "attach")
+        return {
+            "plan_id": plan_id,
+            "attached": attached,
+            "plan_bytes": summed["plan_bytes"],
+        }
 
 
 def publish_plan(plan_id: int, db_path: str | None = None) -> dict:
@@ -119,9 +125,23 @@ def plan_detail(plan_id: int, db_path: str | None = None) -> dict:
             "WHERE i.plan_id=? ORDER BY f.id",
             (plan_id,),
         ).fetchall()
+        mount = conn.execute(
+            "SELECT COALESCE(SUM(f.size_bytes),0) AS s FROM plan_items i "
+            "JOIN lake_files f ON f.id=i.file_id WHERE i.plan_id=?",
+            (plan_id,),
+        ).fetchone()["s"]
+        vouchers = conn.execute(
+            "SELECT * FROM plan_byte_vouchers WHERE plan_id=? ORDER BY id DESC LIMIT 5",
+            (plan_id,),
+        ).fetchall()
+        locked = int(plan["plan_bytes"])
+        aligned = locked == int(mount)
         return {
             "plan": dict(plan),
             "items": [dict(x) for x in items],
-            "true_bytes": true_plan_bytes(plan_id, db_path),
-            "cached_bytes": cached_plan_bytes(plan_id, db_path),
+            "plan_bytes": locked,
+            "mount_bytes": int(mount),
+            "aligned": aligned,
+            "chip": CHIP_OK if aligned else CHIP_OFF,
+            "vouchers": [dict(v) for v in vouchers],
         }

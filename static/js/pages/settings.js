@@ -30,25 +30,17 @@ export async function renderSettings(view, setMsg) {
   try {
     const dash = await api('/api/byte_drift/dash');
     view.innerHTML += `<section class="card" style="margin-top:1rem">
-      <h3>字节漂移旁路</h3>
+      <h3>字节漂移核验</h3>
       <span class="tag">${dash.chip}</span>
-      <p class="muted">真相 ${dash.truth} · 假绿 ${dash.fake_green}</p>
+      <p class="muted">真相 ${dash.truth} · 假绿 ${dash.fake_green} · 凭证 ${dash.rows.length} 行</p>
       <div class="row">
-        <button id="note_byte_drift" type="button">记一笔</button>
-        <button id="half_byte_drift" type="button">半修对齐</button>
+        <button id="recompute_all" class="primary" type="button">重算全部计划</button>
       </div>
     </section>`;
-    document.getElementById('note_byte_drift').onclick = async () => {
+    document.getElementById('recompute_all').onclick = async () => {
       try {
-        await api('/api/byte_drift/note', { method:'POST', body: JSON.stringify({plan_id:1, note:'字节漂移'}) });
-        setMsg('已记旁路');
-        await renderSettings(view, setMsg);
-      } catch (e) { setMsg(e.message, true); }
-    };
-    document.getElementById('half_byte_drift').onclick = async () => {
-      try {
-        const r = await api('/api/byte_drift/half', { method:'POST', body:'{}' });
-        setMsg('半修 ' + r.panel_chip + ' / ' + r.truth);
+        const r = await api('/api/plans/recompute_all', { method:'POST', body:'{}' });
+        setMsg('已重算 ' + r.recomputed + ' 个计划');
         await renderSettings(view, setMsg);
       } catch (e) { setMsg(e.message, true); }
     };

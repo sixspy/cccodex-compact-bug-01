@@ -17,11 +17,12 @@ export async function renderPlans(view, setMsg) {
         <h3>${p.plan_code}</h3>
         <span class="tag">${p.status}</span>
         <p>${p.title}</p>
-        <p class="muted">${p.target_table} · ${p.item_count} 文件 · ${p.plan_bytes} 字节 <span class="tag">${p.bytes_chip || '已同源'}</span></p>
+        <p class="muted">${p.target_table} · ${p.item_count} 文件 · ${p.plan_bytes} 字节 <span class="tag">${p.bytes_chip}</span>${p.aligned ? '' : ` · 挂载和 ${p.mount_bytes}`}</p>
         <div class="row">
           <button data-attach="${p.id}" type="button">挂入碎文件</button>
           <button data-pub="${p.id}" class="primary" type="button">发布</button>
-          <button data-detail="${p.id}" type="button">详情</button><span class="tag" data-thick="byte_drift">已同源</span>
+          <button data-recompute="${p.id}" type="button">重算体积</button>
+          <button data-detail="${p.id}" type="button">详情</button>
         </div>
         <pre class="muted" id="d${p.id}"></pre>
       </article>`).join('') || '<p class="muted">暂无计划</p>'}
@@ -41,7 +42,7 @@ export async function renderPlans(view, setMsg) {
     btn.onclick = async () => {
       try {
         const r = await api('/api/plans/' + btn.dataset.attach + '/attach', { method:'POST', body:'{}' });
-        setMsg('挂入 ' + r.attached + ' 个碎文件');
+        setMsg('挂入 ' + r.attached + ' 个碎文件 · 计划字节 ' + r.plan_bytes);
         await renderPlans(view, setMsg);
       } catch (e) { setMsg(e.message, true); }
     };
@@ -55,11 +56,26 @@ export async function renderPlans(view, setMsg) {
       } catch (e) { setMsg(e.message, true); }
     };
   });
+  view.querySelectorAll('[data-recompute]').forEach(btn => {
+    btn.onclick = async () => {
+      try {
+        const r = await api('/api/plans/' + btn.dataset.recompute + '/recompute', { method:'POST', body:'{}' });
+        setMsg('已重算 · ' + r.item.plan_bytes + ' 字节');
+        await renderPlans(view, setMsg);
+      } catch (e) { setMsg(e.message, true); }
+    };
+  });
   view.querySelectorAll('[data-detail]').forEach(btn => {
     btn.onclick = async () => {
       try {
         const r = await api('/api/plans/' + btn.dataset.detail);
-        document.getElementById('d' + btn.dataset.detail).textContent = JSON.stringify(r.items, null, 2);
+        document.getElementById('d' + btn.dataset.detail).textContent = JSON.stringify({
+          plan_bytes: r.plan_bytes,
+          mount_bytes: r.mount_bytes,
+          chip: r.chip,
+          vouchers: r.vouchers,
+          items: r.items,
+        }, null, 2);
       } catch (e) { setMsg(e.message, true); }
     };
   });
